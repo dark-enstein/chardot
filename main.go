@@ -2,6 +2,8 @@ package main
 
 import (
 	"github.com/dark-enstein/chardot/agent"
+	"github.com/dark-enstein/chardot/cfg"
+	"github.com/dark-enstein/chardot/internal/ilog"
 	"time"
 )
 
@@ -9,7 +11,15 @@ import (
 // Encode functions to run, walk, and wait
 
 func main() {
-	h := agent.NewHare(4, 6)
+	c := cfg.Config{
+		WalkSpeed: "4",
+		RunSpeed:  "6",
+	}
+	ctx, _ := c.InitSetUp()
+	_, err := ilog.GetLoggerFromCtx(ctx)
+	ilog.CheckErrLog(err)
+	//clog.Log(ilog.PANIC, "errors encountered during init: %v", errs)
+	h := agent.NewHare(ctx, 6, 6)
 
 	h.Move(4, 5)
 

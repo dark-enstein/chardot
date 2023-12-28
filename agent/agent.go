@@ -1,239 +1,149 @@
+// Package agent provides A framework for simulating movement and tracking the position
+// of an entity in A 2-dimensional space. This is any entity that satisfies the util.Agent interface,
+// in the current implementation, this is Hare. It includes functions for manipulating
+// coordinates, determining movement direction, calculating distances, and recording paths.
 package agent
 
 import (
+	"context"
 	"fmt"
+	"github.com/dark-enstein/chardot/internal/ilog"
 	"io"
 	"log"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
+var (
+	Clog = &ilog.Logger{} // Clog is the custom logger for the agent package.
+)
+
 const (
-	dimensions = 2
+	Dimensions = 2 // Dimensions defines the number of Dimensions in the current implementation, set to 2.
 )
 
 var (
-	XAXIS = axis("x")
-	YAXIS = axis("y")
+	XAXIS = axis("X")
+	YAXIS = axis("Y")
 	AXES  = []axis{XAXIS, YAXIS}
 )
 
 const (
-	MOVE movType = iota
+	// MovType enumerates the types of movements that an agent can perform.
+	MOVE MovType = iota
 	WALK
 	RUN
 	TOTAL
 	ORIGIN
 )
 
-type sign bool
+type Sign bool // Sign represents A boolean for positive (true) or negative (false) Sign.
 
 const (
-	POS sign = true
-	NEG sign = false
+	POS Sign = true
+	NEG Sign = false
 )
 
-// coordinate is a wrapper over the standard int. it helps for adding convenient functionalities such as negate()
-type coordinate int
-
-// Int returns the underlying integer value of a coordinate
-func (p *coordinate) Int() int {
-	return int(*p)
-}
-
-// assume overrides the integer value of a coordinate
-func (p *coordinate) assume(i int) {
-	point := coordinate(i)
-	p = &point
-}
-
-func (p *coordinate) add(i int) {
-	po := coordinate(i)
-	*p += po
-}
-
-// Sign extracts the underlying sign from a coordinate
-func (p *coordinate) Sign() sign {
-	if strconv.FormatInt(int64(*p), 10)[0] != '-' {
-		return POS
-	}
-	return NEG
-}
-
-// negate turns a positive coordinate integer into a negative one
-func (p *coordinate) negate() error {
-	i, err := strconv.ParseInt(fmt.Sprintf("-%v", p), 10, 0)
-	if err != nil {
-		log.Println("error occured while negating")
-		return err
-	}
-	p.assume(int(i))
-	return nil
-}
-
-// mustNegate turns a positive coordinate integer into a negative one
-func (p *coordinate) mustNegate() {
-	if err := p.negate(); err != nil {
-		panic(err)
-	}
-}
-
-// denegate turns a negative coordinate integer into a positive one
-func (p *coordinate) denegate() error {
-	i, err := strconv.ParseInt(fmt.Sprintf("%v", p)[1:], 10, 0)
-	if err != nil {
-		log.Println("error occured while denegating")
-		return err
-	}
-	p.assume(int(i))
-	return nil
-}
-
-// mustDenegate turns a positive coordinate integer into a negative one
-func (p *coordinate) mustDenegate() {
-	if err := p.denegate(); err != nil {
-		panic(err)
-	}
-}
-
-// Point estimates the difference between two points
-func (p1 *Point) displacement(p2 *Point) *displacement {
-	var displace displacement
-	displace.p, displace.q = *p1, *p2
-	displace.quantity = p1.distance(p2)
-	displace.decideDirection()
-	return &displace
-}
-
-// decideDirection decides the direction of p -> q based on their points coordinates
+// decideDirection decides the direction of displacement from Point p to Point q.
 func (d *displacement) decideDirection() {
-	if (d.p.x == 0 && d.p.y == 0) && (d.q.x == 0 && d.q.y == 0) {
-		log.Panicln("no Path, points referenced are nil")
+	if (d.p.X == 0 && d.p.Y == 0) && (d.q.X == 0 && d.q.Y == 0) {
+		Clog.Log(ilog.PANIC, "no Path, points referenced are nil: %v", d)
 	}
 
-	if d.p.x > d.q.x {
+	if d.p.X > d.q.X {
 		// EAST
-		if d.p.y > d.q.y {
+		if d.p.Y > d.q.Y {
 			// NORTHEAST
 			d.d = NORTHEAST
-		} else if d.q.y > d.p.y {
+		} else if d.q.Y > d.p.Y {
 			// SOUTHEAST
 			d.d = SOUTHEAST
 		} else {
 			// EAST
 			d.d = EAST
 		}
-	}
-
-	if d.q.x > d.p.x {
+	} else if d.q.X > d.p.X {
 		// WEST
-		if d.p.y > d.q.y {
+		if d.p.Y > d.q.Y {
 			// NORTHWEST
 			d.d = NORTHWEST
-		} else if d.q.y > d.p.y {
+		} else if d.q.Y > d.p.Y {
 			// SOUTHWEST
 			d.d = SOUTHWEST
 		} else {
 			// WEST
 			d.d = WEST
 		}
+	} else {
+		// Moving strictly North or South
+		if d.q.Y > d.p.Y {
+			d.d = NORTH
+		} else if d.p.Y > d.q.Y {
+			d.d = SOUTH
+		}
 	}
-}
-
-// distance calculates the distance between two points using Euclidean distance formula
-func (p1 *Point) distance(p2 *Point) float64 {
-	return math.Sqrt(math.Pow(float64(p2.x-p1.x), 2) + math.Pow(float64(p2.y-p1.y), 2))
-}
-
-// movType defines the type of action being carried out on an Agent
-type movType int
-
-// String extracts the type of the referencing action as a string
-func (m movType) String() string {
-	switch m {
-	case MOVE:
-		return fmt.Sprintf("MOVE")
-	case WALK:
-		return fmt.Sprintf("WALK")
-	case RUN:
-		return fmt.Sprintf("RUN")
-	case TOTAL:
-		return fmt.Sprintf("TOTAL")
-	case ORIGIN:
-		return fmt.Sprintf("ORIGIN\n")
-	}
-	return "action unrecognized"
 }
 
 type axis string
 
-type direction int
-
-const (
-	FORWARD direction = iota
-	BACKWARD
-	YDIRECTION
-	LEFT
-	RIGHT
-	XDIRECTION
-	NORTHEAST
-	NORTHWEST
-	SOUTHEAST
-	SOUTHWEST
-	NORTH
-	SOUTH
-	EAST
-	WEST
-)
-
-// Pace is stateless, and it defines a magnitude of shift of Agent along one direction. Designed to be only used once, and discarded. Either only y or x can be set.
+// Pace represents A unit of movement in A given direction. It is stateless, and it defines A magnitude of shift of Agent along one Direction. Designed to be only used once, and discarded. Either only Y or X can be set.
 type Pace struct {
-	x, y coordinate
-	d    direction
+	x, y Coordinate
+	d    Direction
 }
 
-// NewPace returns a new Pace initialized at the direction provided in the argument
-func NewPace(dir direction) *Pace {
+// NewPace returns A new Pace initialized at the Direction provided in the argument
+func NewPace(dir Direction) *Pace {
 	p := &Pace{d: dir}
 	return p
 }
 
-// ScalarMove moves the referenced Pace object without altering the referenced direction.
-// The function argument is a coordinate.
-func (p *Pace) ScalarMove(d coordinate) {
+// ScalarMove moves the referenced Pace object without altering the referenced Direction.
+// The function argument is A Coordinate.
+func (p *Pace) ScalarMove(d Coordinate) {
 	switch p.d {
-	case FORWARD, BACKWARD, YDIRECTION:
+	case FORWARD, NORTH:
+		Clog.Log(ilog.INFO, "since %s, incrementing by %v", p.d.String(), d.Int())
 		p.y += d
-	case LEFT, RIGHT, XDIRECTION:
+	case BACKWARD, SOUTH:
+		Clog.Log(ilog.INFO, "since %s, decrementing by %v", p.d.String(), d.Int())
+		p.y -= d
+	case RIGHT, WEST:
+		Clog.Log(ilog.INFO, "since %s, incrementing by %v", p.d.String(), d.Int())
 		p.x += d
+	case LEFT, EAST:
+		Clog.Log(ilog.INFO, "since %s, decrementing by %v", p.d.String(), d.Int())
+		p.x -= d
+	default:
+		Clog.Log(ilog.PANIC, "direction %v not recognized", p.d.String())
 	}
 }
 
-// VectorMove moves the referenced Pace p1 object while considering direction.
-// The function argument is another Pace p2. It returns a point pointer which is the difference between p1 and p2
+// VectorMove moves the referenced Pace p1 object while considering Direction.
+// The function argument is another Pace p2. It returns A point pointer which is the difference between p1 and p2
 //func (p1 *Pace) VectorMove(p2 *Pace) {
 //	switch p1.d {
 //	case FORWARD, BACKWARD, YDIRECTION:
-//		p.y += d
+//		p.Y += d
 //	case LEFT, RIGHT, XDIRECTION:
-//		p.x += d
+//		p.X += d
 //	}
 //}
 
-func (p *Pace) Result() coordinate {
+func (p *Pace) Result() Coordinate {
 	switch p.d {
-	case FORWARD, BACKWARD, YDIRECTION:
+	case FORWARD, BACKWARD, YDIRECTION, NORTH, SOUTH:
 		return p.y
-	case LEFT, RIGHT, XDIRECTION:
+	case LEFT, RIGHT, XDIRECTION, EAST, WEST:
 		return p.x
 	default:
-		log.Panicf("direction %v not accounted for", p.d)
-		panic("direction not accounted for")
+		Clog.Log(ilog.PANIC, "Direction %v not accounted for", p.d.String())
+		//panic("Direction not accounted for")
 	}
+	return Coordinate(0)
 }
 
 func (p *Pace) PMap() *PMap {
@@ -243,10 +153,10 @@ func (p *Pace) PMap() *PMap {
 }
 
 func (p *Pace) Point() *Point {
-	return &Point{x: p.x, y: p.y}
+	return &Point{X: p.x, Y: p.y}
 }
 
-type PMap map[direction]coordinate
+type PMap map[Direction]Coordinate
 
 func (pm *PMap) Pace() *Pace {
 	var p Pace
@@ -262,16 +172,17 @@ func (pm *PMap) Pace() *Pace {
 	return &p
 }
 
-// path describes the change in an Agent Point value. It is a more detailed Point. It is a collection of pace.
-type path struct {
-	m []PMap
-	a []Pace
+// Path describes the change in an Agent Point value. It is A more detailed Point. It is A collection of pace.
+type Path struct {
+	M   []PMap
+	A   []Pace
+	ctx context.Context
 }
 
-func newPath(len int) *path {
-	return &path{
-		m: make([]PMap, len),
-		a: make([]Pace, len),
+func NewPath(len int) *Path {
+	return &Path{
+		M: make([]PMap, len),
+		A: make([]Pace, len),
 	}
 }
 
@@ -281,144 +192,103 @@ func (p1 *Pace) displacement(p2 *Pace) *Point {
 		switch p2.d {
 		case BACKWARD, LEFT:
 			xway, yway := p1.x+p2.x, p1.y+p2.y
-			xway.mustNegate() // make negative
-			yway.mustNegate() // make negative
+			xway.MustNegate() // make negative
+			yway.MustNegate() // make negative
 			return &Point{
-				x: xway,
-				y: yway,
+				X: xway,
+				Y: yway,
 			}
 		case RIGHT, FORWARD:
 			xway, yway := p2.x-p1.x, p2.y-p1.y
 			return &Point{
-				x: xway,
-				y: yway,
+				X: xway,
+				Y: yway,
 			}
 		}
 	case RIGHT, FORWARD:
 		switch p2.d {
 		case RIGHT, FORWARD:
 			xway, yway := p1.x+p2.x, p1.y+p2.y
-			xway.mustDenegate() // make positive
-			yway.mustDenegate() // make positive
+			xway.MustDenegate() // make positive
+			yway.MustDenegate() // make positive
 			return &Point{
-				x: xway,
-				y: yway,
+				X: xway,
+				Y: yway,
 			}
 		case BACKWARD, LEFT:
 			xway, yway := p1.x-p2.x, p1.y-p2.y
 			return &Point{
-				x: xway,
-				y: yway,
+				X: xway,
+				Y: yway,
 			}
 		}
 
 	}
-	log.Panicln("error dimensions not recognized")
+	Clog.Log(ilog.PANIC, "error Dimensions %v not recognized", p1.d.String())
 	return &Point{}
 }
 
-// Point is the change in the position of an Agent in a cycle. Both X and Y can be changed at once.
+// Point is the change in the position of an Agent in A cycle. Both X and Y can be changed at once.
 //type Point struct {
-//	x, y coordinate
+//	X, Y Coordinate
 //}
 
 type displacement struct {
 	p, q     Point // p: from; q: to
-	d        direction
+	d        Direction
 	quantity float64
+	ctx      context.Context
 }
 
-func (d *Point) Path() *path {
-	var dist = newPath(dimensions)
-	if d.x < 0 {
-		pace := NewPace(LEFT)
-		pace.ScalarMove(d.x)
-		dist.a[0] = *pace
-		dist.m[0] = *pace.PMap()
-	} else if d.x > 0 {
-		pace := NewPace(RIGHT)
-		pace.ScalarMove(d.x)
-		dist.a[0] = *pace
-		dist.m[0] = *pace.PMap()
-	}
-
-	if d.y < 0 {
-		pace := NewPace(BACKWARD)
-		pace.ScalarMove(d.y)
-		dist.a[1] = *pace
-		dist.m[1] = *pace.PMap()
-	} else if d.y > 0 {
-		pace := NewPace(FORWARD)
-		pace.ScalarMove(d.y)
-		dist.a[1] = *pace
-		dist.m[1] = *pace.PMap()
-	}
-	return dist
-}
-
-// NewPace initializes a new Pace
-
-type Agent interface {
-	Move(x, y coordinate)
-	Record(d *Point)
-}
-
-// Point is stateful. The current position of Agent as a result of all the travels thus far
-type Point struct {
-	x, y coordinate
-}
-
-func (p *Point) MoveBy(q *Point) *Point {
-	if p.x > q.x {
-
-	}
-	return &Point{}
-}
-
-type speed int
-
-func (s speed) Int() coordinate {
-	return coordinate(s)
-}
+// NewPace initializes A new Pace
 
 type Config struct {
-	walk, run speed
+	walk, run Speed
+	ctx       context.Context
 }
 
 type Hare struct {
 	pos       Point
-	pathTaken *path
+	pathTaken *Path
 	allPos    []Point //stateful
 	nature    *Config
-	action    movType
+	action    MovType
 	w         io.Writer
 	m         sync.Mutex
+	ctx       context.Context
 }
 
-func NewHare(walk, run speed) *Hare {
+type Opts func()
+
+func NewHare(ctx context.Context, walk, run Speed) *Hare {
 	h := &Hare{
 		pos:       Point{},
-		pathTaken: &path{},
+		pathTaken: &Path{},
 		nature: &Config{
 			walk: walk,
 			run:  run,
 		},
-		w: os.Stdout,
+		w:   os.Stdout,
+		ctx: ctx,
 	}
+	var err error
+	// sets global variable
+	Clog, err = ilog.GetLoggerFromCtx(ctx)
+	ilog.CheckErrLog(err)
 	printPathTaken(ORIGIN, nil, nil)
 	return h
 }
 
-func (h *Hare) Move(x, y coordinate) {
+func (h *Hare) Move(x, y Coordinate) {
 	h.action = MOVE
 	log.Println("Set action to", h.action.String())
 	var displace = &Point{
-		x: x,
-		y: y,
+		X: x,
+		Y: y,
 	}
 	log.Println("Registered displace directive as", displace)
-	h.pos.x += x
-	h.pos.y += y
+	h.pos.X += x
+	h.pos.Y += y
 
 	h.allPos = append(h.allPos, h.pos)
 	var pos []Point
@@ -428,100 +298,153 @@ func (h *Hare) Move(x, y coordinate) {
 
 func (h *Hare) RecordWithDirection(p *Pace) {
 	switch p.d {
-	case FORWARD, BACKWARD, YDIRECTION:
+	case FORWARD, BACKWARD, YDIRECTION, NORTH, WEST:
 		h.rMap(0, p.y)
 		h.rArr(0, p.y)
-	case RIGHT, LEFT, XDIRECTION:
+	case RIGHT, LEFT, XDIRECTION, SOUTH, EAST:
 		h.rMap(p.x, 0)
 		h.rArr(p.x, 0)
 	}
 }
 
-// Record records the point taken and parses it into path traveled thus far
+// Record records the point taken and parses it into Path traveled thus far
 func (h *Hare) Record(d *Point) {
-	h.rMap(d.x, d.y)
-	h.rArr(d.x, d.x)
+	h.rMap(d.X, d.Y)
+	h.rArr(d.X, d.Y)
 }
 
-func (h *Hare) rArr(x, y coordinate) {
-	var arr = make([]Pace, dimensions)
+// rArr constructs a Pace object from two coordinates, and stores it in the *Path.A in the Hare struct
+func (h *Hare) rArr(x, y Coordinate) {
+	var arr = make([]Pace, Dimensions)
+	if x < 1 {
+		arr = append(arr)
+	} else if x > 0 {
+		arr = x
+	}
+
+	if y < 0 {
+		arr[BACKWARD] = y
+	} else if y > 0 {
+		arr[FORWARD] = y
+	}
+
 	for i := 0; i < len(AXES); i++ {
 		if AXES[i] == XAXIS {
 			pace := NewPace(XDIRECTION)
 			pace.ScalarMove(x)
-			arr = append(arr, *pace)
+			h.pathTaken.A = append(h.pathTaken.A, *pace)
 		} else if AXES[i] == YAXIS {
 			pace := NewPace(YDIRECTION)
 			pace.ScalarMove(y)
-			arr = append(arr, *pace)
+			h.pathTaken.A = append(h.pathTaken.A, *pace)
 		}
 	}
 
-	h.pathTaken.a = append(h.pathTaken.a, arr...)
+	h.pathTaken.A = append(h.pathTaken.A, *p)
+
+	//h.pathTaken.A = append(h.pathTaken.A, arr...)
 }
-func (h *Hare) rMap(x, y coordinate) {
-	cycle := make(map[direction]coordinate, dimensions)
-	if x < 0 {
-		cycle[LEFT] = x
-	} else if x > 0 {
-		cycle[RIGHT] = x
-	}
+func (h *Hare) rMap(p *Pace) {
+	//cycle := make(map[Direction]Coordinate, Dimensions)
+	//if x < 0 {
+	//	cycle[LEFT] = x
+	//} else if x > 0 {
+	//	cycle[RIGHT] = x
+	//}
+	//
+	//if y < 0 {
+	//	cycle[BACKWARD] = y
+	//} else if y > 0 {
+	//	cycle[FORWARD] = y
+	//}
 
-	if y < 0 {
-		cycle[BACKWARD] = y
-	} else if y > 0 {
-		cycle[FORWARD] = y
+	switch p.d {
+	case FORWARD, BACKWARD, YDIRECTION, NORTH, WEST:
+		h.pathTaken.M = append(h.pathTaken.M, map[Direction]Coordinate{p.d: p.y})
+	case RIGHT, LEFT, XDIRECTION, SOUTH, EAST:
+		h.pathTaken.M = append(h.pathTaken.M, map[Direction]Coordinate{p.d: p.x})
 	}
-
-	h.pathTaken.m = append(h.pathTaken.m, cycle)
 }
 
 //func travel() {}
 
-// flow moves the Point in only one direction.
-func (h *Hare) flow(timeDur time.Duration, d direction, s speed) ([]Point, *path) {
-	// noOfPaces to location in timeDur at d direction and with s speed.
+// flow moves the Hare in A specified direction for A given duration at A specified speed.
+// It calculates the end position and the Path taken during the movement.
+//
+// Arguments:
+//
+//	timeDur time.Duration: The duration of the movement.
+//	d Direction: The direction in which the Hare will move.
+//	s Speed: The speed at which the Hare moves.
+//
+// Returns:
+//
+//	[]Point: A slice of Point representing the positions of the Hare at each interval.
+//	*Path: A pointer to A Path struct that records the detailed Path taken.
+//
+// The function works by calculating the number of paces (steps) the Hare can take
+// within the given time duration, considering its speed. It then moves the Hare step by step,
+// updating its position and recording each step in the Path. The function accounts for the
+// direction of movement and locks the Hare's position during updates to ensure thread safety.
+// It uses A goroutine to simulate the movement over time, and A timer to handle the duration.
+//
+// Note: This function is intended for internal use within the Hare struct to handle its movement
+// logic and should not be called directly from outside the package.
+func (h *Hare) flow(timeDur time.Duration, d Direction, s Speed) ([]Point, *Path) {
+	// noOfPaces to location in timeDur at d Direction and with s Speed.
 	noOfPaces := int(math.Ceil(timeDur.Seconds()))
 
 	endPosition := make([]Point, noOfPaces)
-	pathTaken := newPath(noOfPaces)
-
-	var direcP *coordinate
-	switch d {
-	case FORWARD, BACKWARD:
-		direcP = &h.pos.y
-	case RIGHT, LEFT:
-		direcP = &h.pos.x
-	}
-
+	pathTaken := NewPath(noOfPaces)
 	timer := time.NewTimer(timeDur)
-
 	secT := time.NewTicker(time.Second)
+
 	go func() {
 		fmt.Println("Travelling...")
 		var i = 0
-		for _ = range secT.C {
+		for range secT.C {
+			if i >= noOfPaces {
+				Clog.Log(ilog.DEBUG, "Index exceeds expected noOfPaces. Ending goroutine prematurely.")
+				break
+			}
+
 			t1 := time.Now()
+			h.m.Lock() // Lock the mutex before modifying h.pos
 			init := h.pos
+			var direcP *Coordinate
+			switch d {
+			case FORWARD, BACKWARD, NORTH, SOUTH:
+				direcP = &h.pos.Y
+			case RIGHT, LEFT, EAST, WEST:
+				direcP = &h.pos.X
+			default:
+				Clog.Log(ilog.ERROR, "Invalid direction: %v", d)
+				h.m.Unlock()
+				continue
+			}
 			*direcP += s.Int()
 			pace := NewPace(d)
+			fmt.Printf("pace: %v, speed: %d\n", pace, s.Int())
 			pace.ScalarMove(s.Int())
-			h.m.Lock()
 			h.RecordWithDirection(pace)
-			pathTaken.m[i] = *pace.PMap()
-			pathTaken.a[i] = *pace
+			pathTaken.M[i] = *pace.PMap()
+			pathTaken.A[i] = *pace
 			endPosition[i] = h.pos
-			h.m.Unlock()
-			log.Printf("Travelled in dur: %v\n", time.Now().Sub(t1))
-			log.Printf("Travelled in one sec from %v to %v\n", init, h.pos)
+			h.m.Unlock() // Unlock the mutex after the modification is done
+			Clog.Log(ilog.INFO, "Travelled in dur: %v\n", time.Now().Sub(t1))
+			Clog.Log(ilog.INFO, "Travelled in one sec from %v to %v\n", init, h.pos)
 			i++
+		}
+
+		if i < noOfPaces {
+			Clog.Log(ilog.ERROR, "Travel ended prematurely. Only completed %d out of %d paces.", i, noOfPaces)
 		}
 	}()
 wait:
 	for {
 		select {
 		case <-timer.C:
-			log.Println("Timer completed, stopping ticker")
+			Clog.Log(ilog.DEBUG, "Timer completed, stopping ticker")
 			secT.Stop()
 			timer.Stop()
 			break wait
@@ -536,58 +459,67 @@ func Println(rightSpacePadding int, format string, args ...interface{}) {
 	return
 }
 
-// Walk moves the Agent by a specific magnitude, at a particular direction and at its natural speed
-func (h *Hare) Walk(duration time.Duration, dir direction) {
+// Walk moves the Agent by A specific magnitude, at A particular Direction and at its natural Speed
+func (h *Hare) Walk(duration time.Duration, dir Direction) {
 	h.action = WALK
 	former := h.pos
 	posStack, dist := h.flow(duration, dir, h.nature.walk)
 	Println(1, "Walked from %v to %v", former, h.pos)
 	fmt.Println(dist, posStack)
 	printPathTaken(h.action, dist, posStack)
-	//h.allPos, h.pathTaken.m, h.pathTaken.a = append(h.allPos, posStack...), append(h.pathTaken.m, dist.m...), append(h.pathTaken.a, dist.a...)
+	//h.allPos, h.pathTaken.M, h.pathTaken.A = append(h.allPos, posStack...), append(h.pathTaken.M, dist.M...), append(h.pathTaken.A, dist.A...)
 }
 
-// Run moves the Agent by a specific magnitude, at a particular direction and its natural running speed
-func (h *Hare) Run(duration time.Duration, dir direction) {
+// Run moves the Agent by A specific magnitude, at A particular Direction and its natural running Speed
+func (h *Hare) Run(duration time.Duration, dir Direction) {
 	h.action = RUN
 	former := h.pos
 	posStack, dist := h.flow(duration, dir, h.nature.run)
 	Println(0, "Ran from %v to %v", former, h.pos)
 	printPathTaken(h.action, dist, posStack)
-	h.allPos, h.pathTaken.m, h.pathTaken.a = append(h.allPos, posStack...), append(h.pathTaken.m, dist.m...), append(h.pathTaken.a, dist.a...)
+	//h.allPos, h.pathTaken.M, h.pathTaken.A = append(h.allPos, posStack...), append(h.pathTaken.M, dist.M...), append(h.pathTaken.A, dist.A...)
 }
 
 func (h *Hare) Println() {
 	printPathTaken(TOTAL, h.pathTaken, h.allPos)
 }
 
-// printPathTaken prints the path taken in the current action (movType instance), thus far.
-// It takes the current action, a pointer to the path taken during the current action, and the position stack in the relevant action
-func printPathTaken(header movType, dist *path, allPos []Point) {
+// printPathTaken prints the Path taken in the current action (MovType instance), thus far.
+// It takes the current action, A pointer to the Path taken during the current action, and the position stack in the relevant action
+func printPathTaken(header MovType, dist *Path, allPos []Point) {
 	if dist == nil || allPos == nil {
 		fmt.Println(header)
 		return
 	}
 	fmt.Println(header)
 	switch true {
-	//case len(dist.a) != 0:
+	//case len(dist.A) != 0:
 	//	// logic for arr
-	case len(dist.m) != 0:
-		for i := 0; i < len(dist.m); i++ {
-			for k, v := range dist.m[i] {
+	case len(dist.M) != 0:
+		for i := 0; i < len(dist.M); i++ {
+			for k, v := range dist.M[i] {
 				switch k {
-				case FORWARD:
+				case FORWARD, NORTH:
 					fmt.Printf("MOVED FORWARD BY %v", v)
-				case BACKWARD:
+				case BACKWARD, SOUTH:
 					fmt.Printf("MOVED BACKWARD BY %v", v)
-				case RIGHT:
+				case RIGHT, WEST:
 					fmt.Printf("MOVED RIGHT BY %v", v)
-				case LEFT:
+				case LEFT, EAST:
 					fmt.Printf("MOVED LEFT BY %v", v)
 				}
 				fmt.Print("; ")
 			}
 		}
-		fmt.Printf("\nCURRENT POS: \n\tX = %v \n\tY = %v\n\n", allPos[len(allPos)-1].x, allPos[len(allPos)-1].y) // TODO: a bug
+		fmt.Printf("\nCURRENT POS: \n\tX = %v \n\tY = %v\n\n", allPos[len(allPos)-1].X, allPos[len(allPos)-1].Y) // TODO: A bug
 	}
 }
+
+type Agent interface {
+	Move(x, y Coordinate)
+	Record(d *Point)
+	Walk(duration time.Duration, dir Direction)
+	Run(duration time.Duration, dir Direction)
+}
+
+var AGENT = "agent" // AGENT represents the name of the agent, used in logging.

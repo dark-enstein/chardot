@@ -1,0 +1,16 @@
+runSpeed: "7"
+walkSpeed: "5"
+logLevel: "INFO"
+actions:
+    - name: "walk"
+      duration: 5
+      direction: "E"
+    - name: "walk"
+      duration: 5
+      direction: "W"
+    - name: "walk"
+      duration: 5
+      direction: "N"
+    - name: "walk"
+      duration: 5
+      direction: "S"
